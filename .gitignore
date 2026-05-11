@@ -1,0 +1,11 @@
+.env
+*.db
+*.sqlite
+_pychache_/
+*.pyc
+data/
+*.xlsx
+.DS_Store
+Thumbs.db
+venv/
+env
