@@ -1,0 +1,204 @@
+{
+  "name": "MEDCLAIM INSIGHT",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medclaim-extract",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e5829901-933b-4590-b728-26b93b08690c",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "d9bba3db-d573-4cee-9a25-fedd88e0711e"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════\n// AGENT 1: PREPROCESSOR (Deterministic — no AI)\n// CSV row → cleaned dict + messy_text naratif\n// Semua logika FIXED — tidak pakai LLM sama sekali\n// ═══════════════════════════════════════════════════\nconst body = $input.first().json;\nconst raw = body.record || body;\n\nconst sf = (v, d=0.0) => { const n=parseFloat(v); return isNaN(n)?d:n; };\nconst si = (v, d=0) => { const n=parseInt(v); return isNaN(n)?d:n; };\n\nconst c = {\n  policy_id:            String(raw.ID_policy || raw.policy_id || 'UNKNOWN'),\n  insured_id:           String(raw.ID_insured || raw.insured_id || 'UNKNOWN'),\n  period:               si(raw.period, 2019),\n  premium:              sf(raw.premium, 0),\n  cost_claims_year:     sf(raw.cost_claims_year, 0),\n  n_medical_services:   si(raw.n_medical_services, 0),\n  age:                  si(raw.age, 35),\n  gender:               String(raw.gender || 'U').toUpperCase()[0],\n  type_policy:          String(raw.type_policy || 'U'),\n  type_product:         String(raw.type_product || 'U'),\n  reimbursement:        String(raw.reimbursement || 'No'),\n  distribution_channel: String(raw.distribution_channel || 'U'),\n  C_H:                  String(raw.C_H || 'H1'),\n  C_C:                  String(raw.C_C || 'C1'),\n  lapse:                si(raw.lapse, 2),\n  seniority_insured:    si(raw.seniority_insured, 0),\n  exposure_time:        sf(raw.exposure_time, 1.0),\n};\n\n// Computed — deterministic, bukan AI\nc.loss_ratio = c.premium > 0\n  ? Math.round((c.cost_claims_year / c.premium) * 10000) / 10000\n  : 0;\n\n// Maps — fixed logic\nconst polMap  = {I:'Individual', C:'Corporate'};\nconst prodMap = {S:'Standard', P:'Premium', D:'Dental', I:'International'};\nconst statMap = {1:'new', 2:'active', 3:'lapsed'};\nconst chMap   = {I:'online portal', A:'agent/broker', D:'direct sales'};\nconst rw = c.reimbursement === 'Yes' ? 'reimbursement model' : 'direct billing';\n\n// Build messy_text — simulasi dokumen tidak terstruktur\n// Ini yang akan dikirim ke Qwen3 untuk diekstrak kembali\nc.messy_text = `HEALTH INSURANCE CLAIM RECORD\n==============================\nReference  : POL-${c.policy_id} / INS-${c.insured_id}\nFiscal Year: ${c.period}\n\nPOLICYHOLDER INFORMATION\nPatient : ${c.gender==='M'?'Male':'Female'}, ${c.age} years old\nPolicy  : ${polMap[c.type_policy]||c.type_policy} — ${prodMap[c.type_product]||c.type_product}\nChannel : ${chMap[c.distribution_channel]||c.distribution_channel}\nTenure  : ${c.seniority_insured} months active\nBilling : ${rw}\nExposure: ${c.exposure_time.toFixed(4)}\n\nFINANCIAL SUMMARY\n  Annual premium        : EUR ${c.premium.toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2})}\n  Total claims this year: EUR ${c.cost_claims_year.toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2})}\n  Medical encounters    : ${c.n_medical_services} services\n\nCLASSIFICATION\n  Health cluster : ${c.C_H}\n  Coverage tier  : ${c.C_C}\n  Status code    : ${c.lapse} (${statMap[c.lapse]||'unknown'})`;\n\nreturn [{ json: c }];"
+      },
+      "id": "45fe471e-6925-4e7a-a4df-8dc79e6f5a28",
+      "name": "Agent 1: Preprocessor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"qwen/qwen3-30b\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a health insurance claims extraction specialist. Extract all fields from the claim document below. Return ONLY a valid JSON object — no explanation, no markdown fences, no extra text.\\n\\nRequired JSON schema (exact field names):\\n{\\n  \\\"policy_id\\\": \\\"string\\\",\\n  \\\"insured_id\\\": \\\"string\\\",\\n  \\\"period\\\": integer,\\n  \\\"premium_eur\\\": float,\\n  \\\"cost_claims_eur\\\": float,\\n  \\\"n_medical_services\\\": integer,\\n  \\\"patient_age\\\": integer,\\n  \\\"patient_gender\\\": \\\"M\\\" or \\\"F\\\",\\n  \\\"policy_type\\\": \\\"Individual\\\" or \\\"Corporate\\\",\\n  \\\"product_type\\\": \\\"Standard\\\" or \\\"Premium\\\" or \\\"Dental\\\" or \\\"International\\\",\\n  \\\"reimbursement_model\\\": \\\"reimbursement model\\\" or \\\"direct billing\\\",\\n  \\\"loss_ratio\\\": float (compute: cost_claims_eur / premium_eur),\\n  \\\"health_cluster\\\": \\\"H1\\\" to \\\"H6\\\",\\n  \\\"coverage_tier\\\": \\\"C1\\\" to \\\"C6\\\",\\n  \\\"policy_status\\\": \\\"new\\\" or \\\"active\\\" or \\\"lapsed\\\",\\n  \\\"risk_flag\\\": \\\"HIGH\\\" if loss_ratio>1.5 or services>80, \\\"MEDIUM\\\" if 0.8-1.5, else \\\"LOW\\\",\\n  \\\"anomaly_reason\\\": \\\"string describing why HIGH risk\\\" or null\\n}\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"DOCUMENT:\\n\\n{{ $json.messy_text }}\\n\\nExtract all fields now:\"\n    }\n  ],\n  \"temperature\": 0,\n  \"max_tokens\": 700,\n  \"response_format\": { \"type\": \"json_object\" }\n}",
+        "options": {}
+      },
+      "id": "cefaefe4-75ee-4738-9de5-9e0db7edd6ea",
+      "name": "Agent 2: Qwen3-30B Extractor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ZM9ud7IIujygXI0b",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════\n// AGENT 3: VALIDATOR + FMR (Deterministic — no AI)\n// Compare LLM output vs ground truth → FMR score\n// Fixed business rules — routing logic DETERMINISTIC\n// ═══════════════════════════════════════════════════\nconst response = $input.first().json;\n\n// Parse Qwen3 response\nlet extracted;\ntry {\n  const content = response.choices[0].message.content;\n  extracted = typeof content === 'string' ? JSON.parse(content) : content;\n} catch(e) {\n  return [{ json: { error: 'Failed to parse Qwen3 response: ' + e.message, raw: response } }];\n}\n\n// Ground truth dari Agent 1 (deterministic values)\nconst gt = $('Agent 1: Preprocessor').first().json;\n\n// Comparison helpers — fixed tolerance rules\nconst near = (a, b, tol=0.05) => {\n  const fa = parseFloat(a), fb = parseFloat(b);\n  if (isNaN(fa) || isNaN(fb)) return false;\n  return Math.abs(fa - fb) <= Math.abs(fb) * tol + 0.01;\n};\nconst sm2 = (a, b) =>\n  String(a).trim().toUpperCase().slice(0,2) ===\n  String(b).trim().toUpperCase().slice(0,2);\n\n// FMR field checks — each field is deterministic pass/fail\nconst checks = {\n  premium:     near(extracted.premium_eur,         gt.premium),\n  cost_claims: near(extracted.cost_claims_eur,     gt.cost_claims_year),\n  age:         String(extracted.patient_age)    === String(gt.age),\n  gender:      sm2(extracted.patient_gender,       gt.gender),\n  services:    String(extracted.n_medical_services) === String(gt.n_medical_services),\n  loss_ratio:  near(extracted.loss_ratio,          gt.loss_ratio, 0.1),\n  cluster:     sm2(extracted.health_cluster,       gt.C_H),\n};\n\n// FMR = correct fields / total fields (deterministic math)\nconst correct = Object.values(checks).filter(Boolean).length;\nconst fmr = Math.round((correct / Object.keys(checks).length) * 10000) / 10000;\n\n// Routing decision is DETERMINISTIC (fixed thresholds, not AI)\nconst recommendation = fmr >= 0.85 ? 'approve' : fmr >= 0.60 ? 'review' : 'reject';\n\n// Business rule flags — fixed logic\nconst flags = [];\nif ((extracted.loss_ratio || 0) > 20) flags.push('extreme_loss_ratio');\nif ((extracted.premium_eur || 0) <= 0) flags.push('premium_zero');\nif ((extracted.n_medical_services || 0) > 200) flags.push('services_suspicious');\n\nreturn [{ json: {\n  extracted,\n  ground_truth: gt,\n  fmr,\n  fmr_correct: correct,\n  fmr_total: Object.keys(checks).length,\n  fmr_detail: checks,\n  flags,\n  recommendation,\n  validation: fmr >= 0.80 ? 'PASS' : 'FAIL',\n  processed_at: new Date().toISOString(),\n} }];"
+      },
+      "id": "303277b0-3ef9-4f27-a7e3-05a5102623b4",
+      "name": "Agent 3: Validator (FMR)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════\n// AGENT 4: MONITOR — Fraud & Anomaly Detection\n// Semua rule-based DETERMINISTIC — bukan AI\n// AI hanya di Agent 2. Semua keputusan lain: fixed logic\n// ═══════════════════════════════════════════════════\nconst data = $input.first().json;\nconst gt  = data.ground_truth;\nconst lr  = gt.loss_ratio || 0;\nconst svc = gt.n_medical_services || 0;\nconst fmr = data.fmr || 1;\nconst pid = gt.policy_id || '?';\n\nconst alerts = [];\n\n// Rule 1: Extreme loss ratio (deterministic threshold)\nif (lr > 5.0) {\n  alerts.push({\n    severity: 'HIGH',\n    type: 'EXTREME_LOSS_RATIO',\n    policy_id: pid,\n    value: Math.round(lr * 100) / 100,\n    message: `Policy ${pid}: loss ratio ${lr.toFixed(2)}x — claims far exceed premium`,\n  });\n} else if (lr > 2.0) {\n  alerts.push({\n    severity: 'MEDIUM',\n    type: 'HIGH_LOSS_RATIO',\n    policy_id: pid,\n    value: Math.round(lr * 100) / 100,\n    message: `Policy ${pid}: loss ratio ${lr.toFixed(2)}x — needs review`,\n  });\n}\n\n// Rule 2: High utilization (deterministic threshold)\nif (svc > 80) {\n  alerts.push({\n    severity: 'MEDIUM',\n    type: 'HIGH_UTILIZATION',\n    policy_id: pid,\n    value: svc,\n    message: `Policy ${pid}: ${svc} medical services — unusually high utilization`,\n  });\n}\n\n// Rule 3: Low extraction quality (FMR below threshold)\nif (fmr < 0.5) {\n  alerts.push({\n    severity: 'LOW',\n    type: 'LOW_EXTRACTION_QUALITY',\n    policy_id: pid,\n    value: fmr,\n    message: `Policy ${pid}: FMR ${(fmr*100).toFixed(0)}% — manual verification needed`,\n  });\n}\n\nconst high   = alerts.filter(a => a.severity === 'HIGH').length;\nconst medium = alerts.filter(a => a.severity === 'MEDIUM').length;\n\nreturn [{ json: {\n  ...data,\n  monitoring: {\n    total_alerts: alerts.length,\n    high,\n    medium,\n    low: alerts.length - high - medium,\n    batch_status: high > 0 ? 'CRITICAL' : alerts.length > 0 ? 'REVIEW' : 'CLEAN',\n    alerts,\n  },\n} }];"
+      },
+      "id": "13e83e06-e533-4ab0-8345-b9a77520376e",
+      "name": "Agent 4: Monitor (Fraud)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format final output — clean response ke Streamlit\nconst d = $input.first().json;\n\nconst output = {\n  id: (() => {\n    const arr = new Uint8Array(16);\n    for(let i=0;i<16;i++) arr[i]=Math.floor(Math.random()*256);\n    arr[6]=(arr[6]&0x0f)|0x40; arr[8]=(arr[8]&0x3f)|0x80;\n    return [...arr].map((b,i)=>[4,6,8,10].includes(i)?'-'+b.toString(16).padStart(2,'0'):b.toString(16).padStart(2,'0')).join('');\n  })(),\n  pipeline_version: '5.0.0-qwen3',\n  model_used: 'qwen/qwen3-30b via Groq API',\n  processed_at: new Date().toISOString(),\n  fmr: d.fmr,\n  fmr_correct: d.fmr_correct,\n  fmr_total: d.fmr_total,\n  fmr_detail: d.fmr_detail,\n  recommendation: d.recommendation,\n  validation: d.validation,\n  risk_flag: d.extracted?.risk_flag || 'UNKNOWN',\n  loss_ratio: d.ground_truth?.loss_ratio || 0,\n  flags: d.flags || [],\n  monitoring: d.monitoring,\n  extracted: d.extracted,\n  ground_truth: {\n    policy_id:        d.ground_truth?.policy_id,\n    premium:          d.ground_truth?.premium,\n    cost_claims_year: d.ground_truth?.cost_claims_year,\n    loss_ratio:       d.ground_truth?.loss_ratio,\n    n_medical_services: d.ground_truth?.n_medical_services,\n    age:              d.ground_truth?.age,\n    gender:           d.ground_truth?.gender,\n  },\n};\n\nreturn [{ json: output }];"
+      },
+      "id": "030037ea-5539-4521-8f29-efdef216ac31",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "06b8e1c6-6f39-44dc-abce-71091237e509",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1328,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Agent 1: Preprocessor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent 1: Preprocessor": {
+      "main": [
+        [
+          {
+            "node": "Agent 2: Qwen3-30B Extractor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent 2: Qwen3-30B Extractor": {
+      "main": [
+        [
+          {
+            "node": "Agent 3: Validator (FMR)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent 3: Validator (FMR)": {
+      "main": [
+        [
+          {
+            "node": "Agent 4: Monitor (Fraud)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent 4: Monitor (Fraud)": {
+      "main": [
+        [
+          {
+            "node": "Format Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Output": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "66de7e71-6957-4f42-8149-5bedec4e2931",
+  "meta": {
+    "instanceId": "9fa2a3e8eb101cc44b3fb5d02ce11d4894e7de0104c7ac91a4f709cb25302d92"
+  },
+  "id": "MjjMbZwNuQMil7v8",
+  "tags": []
+}

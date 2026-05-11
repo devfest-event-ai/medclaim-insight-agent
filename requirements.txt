@@ -1,0 +1,8 @@
+streamlit
+pandas
+requests
+python-dotenv
+plotly
+openpyxl
+groq
+# libsql-experimental  # <-- DIKOMENTARI/DIHAPUS
