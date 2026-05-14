@@ -144,62 +144,36 @@ def main():
         st.markdown("*n8n Sumopod + Streamlit + Turso*")
         st.divider()
 
-        # N8N URL
-        st.markdown("**🔗 n8n Webhook URL**")
-        n8n_url_input = st.text_input(
-            "Production URL dari Sumopod",
-            value=st.session_state["n8n_url"],
-            type="password",
-            help="Klik Webhook Trigger di Sumopod → copy Production URL → Publish workflow"
-        )
-        if n8n_url_input:
-            st.session_state["n8n_url"] = n8n_url_input
-            os.environ["N8N_WEBHOOK_URL"] = n8n_url_input
-            import n8n_client
-            n8n_client.N8N_WEBHOOK_URL = n8n_url_input
-
-        # Connection status
-        if st.session_state["n8n_url"]:
-            col_test, col_status = st.columns([1,1])
-            with col_test:
-                if st.button("Test", key="test_n8n"):
-                    with st.spinner("Testing..."):
-                        r = test_n8n_connection()
-                    if "error" not in r:
-                        st.session_state["n8n_ok"] = True
-                    else:
-                        st.session_state["n8n_ok"] = False
-                        st.session_state["n8n_err"] = r.get("error","")
-            with col_status:
-                if st.session_state.get("n8n_ok"):
-                    st.markdown("🟢 Connected")
-                elif st.session_state.get("n8n_ok") == False:
-                    st.markdown("🔴 Error")
+        # 🔐 API Keys dari Environment Variables (aman, tidak bisa diubah via UI)
+        st.markdown("### 🔐 Configuration (Read-Only)")
+        
+        # Ambil dari env vars (sudah diset di Streamlit Cloud Secrets)
+        n8n_url = os.getenv("N8N_WEBHOOK_URL", "")
+        groq_key = os.getenv("GROQ_API_KEY", "")
+        
+        # Tampilkan status (tanpa expose nilai asli)
+        if n8n_url:
+            st.markdown("✅ **n8n Webhook**: Terhubung")
+            st.markdown(f"`{n8n_url[:30]}...`")
         else:
-            st.markdown('<div class="warn-card">Isi webhook URL dari Sumopod</div>', unsafe_allow_html=True)
+            st.markdown("❌ **n8n Webhook**: Tidak diset")
+            st.info("Tambahkan `N8N_WEBHOOK_URL` di Streamlit Cloud Secrets")
+        
+        if groq_key:
+            st.markdown("✅ **Groq API Key**: Terhubung")
+            st.markdown("`gsk_***`")
+        else:
+            st.markdown("❌ **Groq API Key**: Tidak diset")
+            st.info("Tambahkan `GROQ_API_KEY` di Streamlit Cloud Secrets")
 
         st.divider()
-        # Groq key (untuk analytics agent lokal)
-        st.markdown("**🤖 Groq API Key**")
-        groq_input = st.text_input(
-            "Untuk Analytics Agent",
-            value=st.session_state["groq_key"],
-            type="password",
-            help="console.groq.com — gratis, tidak perlu kartu kredit"
-        )
-        if groq_input:
-            st.session_state["groq_key"] = groq_input
-            os.environ["GROQ_API_KEY"] = groq_input
-            import analytics
-            analytics.GROQ_API_KEY = groq_input
-
-        st.divider()
+        
         # DB info
         db_type = "🟣 Turso (cloud)" if USE_TURSO else "🔵 SQLite (local)"
         st.markdown(f"**💾 Database:** {db_type}")
         st.divider()
 
-        # Pipeline flow
+        # Pipeline flow (visual)
         st.markdown("**Pipeline Flow**")
         st.markdown("""
         ```
@@ -283,13 +257,22 @@ def main():
             n_sample = st.slider("Records per batch", 1, 15, 3,
                              help="Mulai dari 1-3 untuk test. Setiap record = 1 call ke Groq via n8n.")
 
-            use_n8n = st.toggle("Gunakan n8n Sumopod", value=bool(st.session_state["n8n_url"]),
+            # Check koneksi dari env vars (bukan session state yang bisa diubah UI)
+            n8n_available = bool(os.getenv("N8N_WEBHOOK_URL"))
+            groq_available = bool(os.getenv("GROQ_API_KEY"))
+
+            # ✅ Baca langsung dari env vars (aman)
+            n8n_available = bool(os.getenv("N8N_WEBHOOK_URL"))
+            groq_available = bool(os.getenv("GROQ_API_KEY"))
+
+            use_n8n = st.toggle("Gunakan n8n Sumopod", value=n8n_available,
                             help="Off = local Python fallback (butuh GROQ_API_KEY)")
 
             can_run = (
                 st.session_state.get("dataset") is not None and
-                (st.session_state["n8n_url"] or st.session_state["groq_key"])
+                (n8n_available or groq_available)
             )
+            
             run_btn = st.button("▶ Jalankan Pipeline", type="primary", disabled=not can_run)
 
         with col_info:
@@ -306,11 +289,13 @@ def main():
                         unsafe_allow_html=True)
 
             st.markdown("**Mode operasi:**")
-            if use_n8n and st.session_state["n8n_url"]:
+            # ✅ Baca status dari env var untuk display
+            n8n_available = bool(os.getenv("N8N_WEBHOOK_URL"))
+            if use_n8n and n8n_available:
                 st.info("🔗 **n8n Mode**: Record dikirim ke Sumopod webhook. Groq berjalan di n8n cloud.")
             else:
                 st.warning("💻 **Local Mode**: Pipeline berjalan di Python lokal. Butuh GROQ_API_KEY.")
-
+                
         # ── RUN ───────────────────────────────────────────────────────────────────
         if run_btn:
             df = st.session_state["dataset"]
@@ -334,8 +319,12 @@ def main():
                 rec_safe = {k: to_json_serializable(v) for k, v in rec.items()}
 
                 t_start = time.time()
-                if use_n8n and st.session_state["n8n_url"]:
-                    result = call_n8n_pipeline(rec_safe)  # ← ✅ Kirim yang sudah aman
+                # ✅ Gunakan env var langsung untuk eksekusi (lebih aman)
+                if use_n8n and os.getenv("N8N_WEBHOOK_URL"):
+                    result = call_n8n_pipeline(rec_safe)
+                else:
+                    # Fallback ke local pipeline jika n8n tidak tersedia
+                    result = call_local_pipeline(rec)
 
                 # Normalize fields dari n8n response
                 if "error" not in result:
@@ -447,8 +436,10 @@ def main():
     with tab_analytics:
         st.subheader("📊 Analytics Agent — Natural Language → SQL → Business Insight")
 
-        if not st.session_state["groq_key"]:
-            st.warning("⚠️ Isi GROQ_API_KEY di sidebar untuk Analytics Agent")
+        # ✅ Check dari env var langsung
+        if not os.getenv("GROQ_API_KEY"):
+            st.warning("⚠️ GROQ_API_KEY tidak diset di Streamlit Cloud Secrets")
+            st.info("Tambahkan `GROQ_API_KEY` di Settings → Secrets")
             st.stop()
 
         # Upload dataset untuk analytics
