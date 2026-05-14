@@ -27,6 +27,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+
 # ── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="MedClaim Insight Agent",
@@ -85,7 +86,7 @@ def get_initial_stats(db):
 # ── DB & SESSION STATE ────────────────────────────────────────────────────────
 @st.cache_resource
 def init_db():
-    return get_db()
+    return get_db_connection()
 
 # db = init_db()
 
@@ -100,6 +101,28 @@ if "dataset" not in st.session_state:
 # =============================================================================
 # MAIN APP
 # =============================================================================
+
+def to_json_serializable(obj):
+    """Konversi objek Python/numpy/pandas ke tipe yang JSON-safe"""
+    import numpy as np
+    from datetime import datetime, date
+    
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: to_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [to_json_serializable(item) for item in obj]
+    elif pd.isna(obj):  # Handle NaN/None
+        return None
+    else:
+        return obj  # str, int, float, bool sudah aman
 
 def main():
 
@@ -307,11 +330,12 @@ def main():
             for i, rec in enumerate(records):
                 status_text.text(f"Record {i+1}/{len(records)} — menunggu n8n response...")
 
+                # ✅ Konversi record ke JSON-safe sebelum dikirim
+                rec_safe = {k: to_json_serializable(v) for k, v in rec.items()}
+
                 t_start = time.time()
                 if use_n8n and st.session_state["n8n_url"]:
-                    result = call_n8n_pipeline(rec)
-                else:
-                    result = call_local_pipeline(rec)
+                    result = call_n8n_pipeline(rec_safe)  # ← ✅ Kirim yang sudah aman
 
                 # Normalize fields dari n8n response
                 if "error" not in result:
@@ -355,10 +379,10 @@ def main():
                     st.error(f"❌ Record {idx+1}: {r['error']}")
                     continue
 
-                    fmr = r.get("fmr",0)
-                    rec_val = r.get("recommendation","review")
-                    icon = "🟢" if fmr>=0.85 else ("🟡" if fmr>=0.60 else "🔴")
-                    risk = r.get("risk_flag","?")
+                fmr = r.get("fmr",0)
+                rec_val = r.get("recommendation","review")
+                icon = "🟢" if fmr>=0.85 else ("🟡" if fmr>=0.60 else "🔴")
+                risk = r.get("risk_flag","?")
 
                 with st.expander(f"{icon} Record {idx+1} — FMR: {fmr:.1%} | {rec_val.upper()} | Risk: {risk} | {r.get('elapsed_ms',0)}ms"):
                     cl, cr = st.columns(2)
