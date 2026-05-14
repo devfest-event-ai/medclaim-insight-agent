@@ -60,8 +60,8 @@ st.markdown("""<style>
 def get_db_connection():
     """Lazy load DB connection dengan error handling"""
     try:
-        from db import init_db as original_init_db
-        db = original_init_db()
+        from db import get_db  # ← ✅ Gunakan get_db (fungsi yang ada)
+        db = get_db()
         return db
     except Exception as e:
         import streamlit as st
@@ -73,13 +73,13 @@ def get_initial_stats(db):
     """Load stats dengan fallback jika DB gagal"""
     try:
         if db is None:
-            return {"total": 0, "approved": 0, "review": 0, "fraud": 0, "avg_fmr": None}
+            return {"total": 0, "approve": 0, "review": 0, "reject": 0, "high_risk": 0, "avg_fmr": None}  # ← ✅
         from db import get_stats
         return get_stats(db)
     except Exception as e:
         import streamlit as st
         st.warning(f"⚠️ Failed to load stats: {e}")
-        return {"total": 0, "approved": 0, "review": 0, "fraud": 0, "avg_fmr": None}
+        return {"total": 0, "approve": 0, "review": 0, "reject": 0, "high_risk": 0, "avg_fmr": None}  # ← ✅
 # =============================================================================
 
 # ── DB & SESSION STATE ────────────────────────────────────────────────────────
@@ -208,10 +208,10 @@ def main():
     # stats = get_stats(db)
     stats = get_initial_stats(db)
     try:
-        stats = get_stats(db) if db else {"total": 0, "approved": 0, "review": 0, "fraud": 0, "avg_fmr": None}
+        stats = get_stats(db) if db else {"total": 0, "approve": 0, "review": 0, "reject": 0, "high_risk": 0, "avg_fmr": None}  # ← ✅
     except Exception as e:
         st.warning(f"⚠️ Failed to load stats: {e}")
-        stats = {"total": 0, "approved": 0, "review": 0, "fraud": 0, "avg_fmr": None}
+        stats = {"total": 0, "approve": 0, "review": 0, "reject": 0, "high_risk": 0, "avg_fmr": None}  # ← ✅
 
     c1,c2,c3,c4,c5,c6 = st.columns(6)
     c1.metric("Total Diproses", stats["total"])
