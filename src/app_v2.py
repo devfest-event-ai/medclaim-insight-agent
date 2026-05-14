@@ -333,13 +333,13 @@ def main():
                     result["risk_flag"]     = result.get("risk_flag") or (result.get("extracted",{}).get("risk_flag") if isinstance(result.get("extracted"),dict) else "UNKNOWN") or "UNKNOWN"
                     result["recommendation"]= result.get("recommendation","review")
                     result["loss_ratio"]    = result.get("loss_ratio") or 0
-                    result["ground_truth"]  = {
-                        "policy_id": str(rec.get("ID_policy","")),
-                        "premium": safe_float(rec.get("premium",0)),
-                        "cost_claims_year": safe_float(rec.get("cost_claims_year",0)),
-                        "n_medical_services": int(rec.get("n_medical_services",0)),
-                        "age": int(rec.get("age",0)),
-                        "gender": str(rec.get("gender","")),
+                    result["ground_truth"] = {
+                        "policy_id": str(rec.get("ID_policy", "")),
+                        "premium": safe_float(rec.get("premium", 0)),  # ✅ Sudah benar
+                        "cost_claims_year": safe_float(rec.get("cost_claims_year", 0)),  # ✅ Sudah benar
+                        "n_medical_services": int(safe_float(rec.get("n_medical_services", 0))),  # ← ✅ FIX
+                        "age": int(safe_float(rec.get("age", 0))),  # ← ✅ Tambah safe_float juga
+                        "gender": str(rec.get("gender", "")),
                     }
                     fmr_scores.append(fmr)
                     save_result(db, result)
