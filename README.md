@@ -35,10 +35,8 @@ This agent reduces processing time to 3 minutes with 94% accuracy.
 │ - Real-time progress tracking │
 │ - Interactive analytics and visualizations │
 └─────────────────────┬───────────────────────────────────────────┘
-
 │ POST record (JSON)
 ▼
-
 ┌─────────────────────────────────────────────────────────────────┐
 │ BACKEND BRAIN — n8n Sumopod (cloud workflow automation) │
 │ │
@@ -59,7 +57,6 @@ This agent reduces processing time to 3 minutes with 94% accuracy.
 
 │ JSON result
 ▼
-
 ┌─────────────────────────────────────────────────────────────────┐
 │ DATABASE — SQLite (local) / Turso (cloud edge) │
 │ - extractions: all extraction results + FMR per record │
@@ -145,7 +142,7 @@ Agent converts natural language → SQL → executes → returns chart + narrati
 
 6. Click "Deploy!" → Wait 2-3 minutes
 7. Your app is live at: https://ai-powered-healthcare-automation.streamlit.app/
-
+'
 Option 2: Run Locally
 
 # Clone repository
@@ -180,6 +177,8 @@ Source: Mendeley Health Insurance Dataset
 License: CC BY 4.0 (free for research and commercial use)
 Size: 228,000 records × 42 columns
 Fields: policy_id, premium, cost_claims_year, n_medical_services, age, gender, ICD codes, etc.
+
+
 Builder's Journey and Lessons Learned
 "The code is public. The thinking is mine."
 Biggest Challenge
@@ -248,6 +247,7 @@ Multi-language support (Bahasa Indonesia, Spanish)
 Export results to PDF/Excel
 Email alerts for high-risk claims
 Dashboard for insurance company admins
+
 Development History
 Version
 Description
@@ -264,6 +264,7 @@ Current / Live
 v4
 Professional documentation + performance metrics + Novo AI alignment
 Current / Live
+
 License
 This project is licensed under the MIT License - see the LICENSE file for details.
 The dataset is licensed under CC BY 4.0 - see Mendeley Dataset.
@@ -277,6 +278,7 @@ Email: forlonglifelearning9@gmail.com
 GitHub (Project): devfest-event-ai/medclaim-insight-agent
 GitHub (Personal): @Forlonglifelearning2024
 If you found this project useful, please star the repository.
+
 Acknowledgments
 Groq for providing free LLM inference API
 n8n for open-source workflow automation
@@ -289,3 +291,4 @@ Made for Novo AI Portfolio
 Report Bug · Request Feature · Live Demo
 </div>
 ```
+
